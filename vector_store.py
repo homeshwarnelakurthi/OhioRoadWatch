@@ -24,13 +24,22 @@ def _get_collections():
 def index_incidents() -> int:
     incidents_col, _ = _get_collections()
     incidents = db.all_incidents()
+    ids = [str(inc["id"]) for inc in incidents]
+
+    # Incidents that OHGO no longer returns have cleared. Drop them from the
+    # index too, so the agent never reports a resolved incident as live.
+    stale = [i for i in incidents_col.get(include=[])["ids"] if i not in set(ids)]
+    if stale:
+        incidents_col.delete(ids=stale)
+
     if not incidents:
         return 0
     docs = [
-        f"{inc['description']} at {inc['location']} ({inc['main_route']}) since {inc['start_date']}"
+        f"{inc['description']} at {inc['location']} ({inc['route_name'] or 'unknown route'}"
+        f"{', ' + inc['direction'] if inc.get('direction') else ''}), "
+        f"status {inc.get('road_status') or 'unknown'}, seen {inc['fetched_at']}"
         for inc in incidents
     ]
-    ids = [str(inc["id"]) for inc in incidents]
     incidents_col.upsert(documents=docs, ids=ids)
     return len(docs)
 
